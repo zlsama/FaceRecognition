@@ -22,9 +22,11 @@ x1= tf.unstack(x, n_steps, 1)
 #lstm_cell = tf.contrib.rnn.BasicLSTMCell(n_hidden, forget_bias=1.0)
 #outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x1,dtype=tf.float32)
 
-gru = tf.contrib.rnn.GRUCell(n_hidden)
-outputs,_ = tf.nn.dynamic_rnn(gru,x,dtype=tf.float32)
-outputs = tf.transpose(outputs,[1,0,2])
+stack_rnn = []
+for i in range(3):
+    stack_rnn.append(tf.contrib.rnn.LSTMCell(n_hidden))
+mcell = tf.contrib.rnn.MultiRNNCell(stack_rnn)
+outputs, states = tf.contrib.rnn.static_rnn(mcell, x1,dtype=tf.float32)
 
 pred = tf.contrib.layers.fully_connected(outputs[-1],n_classes,activation_fn=None)
 
@@ -41,7 +43,7 @@ optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
 correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 print('hello')
-# Æô¶¯session
+# å¯åŠ¨session
 with tf.Session() as sess:
     sess.run(tf.global_variables_initializer())
     step = 1
@@ -53,7 +55,7 @@ with tf.Session() as sess:
         # Run optimization op (backprop)
         sess.run(optimizer, feed_dict={x: batch_x, y: batch_y})
         if step % display_step == 0:
-            # ¼ÆËãÅú´ÎÊı¾İµÄ×¼È·ÂÊ
+            # è®¡ç®—æ‰¹æ¬¡æ•°æ®çš„å‡†ç¡®ç‡
             acc = sess.run(accuracy, feed_dict={x: batch_x, y: batch_y})
             # Calculate batch loss
             loss = sess.run(cost, feed_dict={x: batch_x, y: batch_y})
@@ -63,7 +65,7 @@ with tf.Session() as sess:
         step += 1
     print (" Finished!")
 
-    # ¼ÆËã×¼È·ÂÊ for 128 mnist test images
+    # è®¡ç®—å‡†ç¡®ç‡ for 128 mnist test images
     test_len = 128
     test_data = mnist.test.images[:test_len].reshape((-1, n_steps, n_input))
     test_label = mnist.test.labels[:test_len]
