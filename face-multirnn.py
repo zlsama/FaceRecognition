@@ -1,71 +1,87 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Aug 13 09:47:56 2018
+Created on Thu Aug 16 20:12:15 2018
 
 @author: zhanglisama    jxufe
 """
 
+import os
+import numpy as np
 import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from PIL import Image
+from time import time
+#获取dataset
+def load_data(dataset_path):
+    
+    X = []
+    
+    for dirname,dirnames,filensmes in os.walk(dataset_path):
+        for subdirname in dirnames:   
+            subject_path=os.path.join(dirname,subdirname)  
+            for filename in os.listdir(subject_path):   
+                im=Image.open(os.path.join(subject_path,filename))
+                im=np.asarray(im,dtype=np.float32)/256
+                im=np.ndarray.flatten(im)
+                X.append(im)
+                
+    label = np.zeros((400, 40))
+    for i in range(40):
+        label[i * 10: (i + 1) * 10, i] = 1
+        
+    images_train,images_test,target_train,target_test=train_test_split(X,label,test_size=0.1,random_state=0)
+    return [(images_train,images_test),(target_train,target_test)]
+t0 = time()
+dataset_path = 'att_faces'
+dataset = load_data(dataset_path)
+batch_size = 40
+train_set_x = dataset[0][0]   
+train_set_x =np.asarray(train_set_x, dtype='float32')
+train_set_x = np.reshape(train_set_x,[-1,112,92])
+train_set_y = dataset[1][0]    #训练标签
+valid_set_x = dataset[0][1]
+valid_set_x = np.asarray(valid_set_x, dtype='float32')
+valid_set_x = np.reshape(valid_set_x,[-1,112,92])
+valid_set_y = dataset[1][1]
+n_input = 112
+n_steps = 92
+n_hidden = 40
+n_classes = 40
 
-from tensorflow.examples.tutorials.mnist import input_data
-mnist=input_data.read_data_sets('MNIST_data/',one_hot=True)
-
-n_input = 28
-n_steps = 28
-n_hidden = 128
-n_classes = 10
-
-x = tf.placeholder('float', [None, n_steps, n_input])
-y = tf.placeholder('float', [None, n_classes])
-
-x1= tf.unstack(x, n_steps, 1)
-#lstm_cell = tf.contrib.rnn.BasicLSTMCell(n_hidden, forget_bias=1.0)
-#outputs, states = tf.contrib.rnn.static_rnn(lstm_cell, x1,dtype=tf.float32)
-
-gru = tf.contrib.rnn.GRUCell(n_hidden)
-outputs,_ = tf.nn.dynamic_rnn(gru,x,dtype=tf.float32)
-outputs = tf.transpose(outputs,[1,0,2])
-
-pred = tf.contrib.layers.fully_connected(outputs[-1],n_classes,activation_fn=None)
+X = tf.placeholder('float', [None, n_input, n_steps])  #x.shape --> (40,112,92)
+Y = tf.placeholder('float', [None, n_classes])   
+x1= tf.unstack(X, n_input, 1)
+stack_rnn = []
+for i in range(3):
+    stack_rnn.append(tf.contrib.rnn.LSTMCell(n_hidden))
+mcell = tf.contrib.rnn.MultiRNNCell(stack_rnn)
+outputs, states = tf.contrib.rnn.static_rnn(mcell, x1,dtype=tf.float32)
+predict = tf.contrib.layers.fully_connected(outputs[-1],n_classes,activation_fn=None)
 
 learning_rate = 0.01
-training_iters = 10000
-batch_size = 128
-display_step = 10
+
+batch_size = 40
 
 # Define loss and optimizer
-cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=pred, labels=y))
-optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost)
+cost_func = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=predict, labels=Y))
+optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(cost_func)
 
 # Evaluate model
-correct_pred = tf.equal(tf.argmax(pred,1), tf.argmax(y,1))
+correct_pred = tf.equal(tf.argmax(predict,1), tf.argmax(Y,1))
 accuracy = tf.reduce_mean(tf.cast(correct_pred, tf.float32))
 print('hello')
-# 启动session
-with tf.Session() as sess:
-    sess.run(tf.global_variables_initializer())
-    step = 1
-    # Keep training until reach max iterations
-    while step * batch_size < training_iters:
-        batch_x, batch_y = mnist.train.next_batch(batch_size)
-        # Reshape data to get 28 seq of 28 elements
-        batch_x = batch_x.reshape((batch_size, n_steps, n_input))
-        # Run optimization op (backprop)
-        sess.run(optimizer, feed_dict={x: batch_x, y: batch_y})
-        if step % display_step == 0:
-            # 计算批次数据的准确率
-            acc = sess.run(accuracy, feed_dict={x: batch_x, y: batch_y})
-            # Calculate batch loss
-            loss = sess.run(cost, feed_dict={x: batch_x, y: batch_y})
-            print ("Iter " + str(step*batch_size) + ", Minibatch Loss= " + \
-                  "{:.6f}".format(loss) + ", Training Accuracy= " + \
-                  "{:.5f}".format(acc))
-        step += 1
-    print (" Finished!")
-
-    # 计算准确率 for 128 mnist test images
-    test_len = 128
-    test_data = mnist.test.images[:test_len].reshape((-1, n_steps, n_input))
-    test_label = mnist.test.labels[:test_len]
-    print ("Testing Accuracy:", \
-        sess.run(accuracy, feed_dict={x: test_data, y: test_label}))
+#启动session
+with tf.Session() as session:
+      session.run(tf.global_variables_initializer())
+      for epoch in range(100):
+            epoch_loss = 0
+            for i in range((int)(np.shape(train_set_x)[0] / batch_size)):
+                x = train_set_x[i * batch_size: (i + 1) * batch_size]
+                y = train_set_y[i * batch_size: (i + 1) * batch_size]
+                _, cost = session.run([optimizer, cost_func], feed_dict={X: x, Y: y})
+                epoch_loss += cost
+#            print('train accuracy:',accuracy.eval({X:x,Y:y}),'%d'%epoch,'epoch_loss:',epoch_loss)
+      correct = tf.equal(tf.argmax(predict,1), tf.argmax(Y,1))
+      valid_accuracy = tf.reduce_mean(tf.cast(correct,'float'))
+      print('valid set accuracy: ', valid_accuracy.eval({X: valid_set_x, Y: valid_set_y}))
+      print('time:%f'%(time()-t0))
